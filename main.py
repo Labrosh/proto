@@ -8,6 +8,9 @@ from datetime import timedelta
 # Action pool
 actions_per_day = 3
 
+# Add a constant for the start time in seconds
+start_time_seconds = 21600  # 6:00 AM
+
 class FarmGame:
     def __init__(self):
         # Game state
@@ -19,7 +22,7 @@ class FarmGame:
         self.coffee_inventory = 1
         self.time_per_day = 28800  # 8 hours in seconds
         self.morning_end_time = 14400  # Noon in seconds
-        self.current_time = 0  # Start of the day at 6:00 AM
+        self.current_time = start_time_seconds  # Start of the day at 6:00 AM
         self.coffee_buff_active = False
         self.pet_bonus_active = False
         self.crops_tended = 0
@@ -28,6 +31,7 @@ class FarmGame:
         self.petted_today = False  # Track if the companion has been petted today
         self.crops_tended_today = 0  # Track the number of times crops have been tended
         self.max_crops_tended = 3  # Maximum times crops can be tended per day
+        self.pet_following = False
 
     # ----- STARTUP -----
 
@@ -79,18 +83,20 @@ class FarmGame:
         time_cost = action_costs.get(choice, 0)
         if self.coffee_buff_active:
             time_cost //= 2  # Halve time cost if coffee buff is active
+        if self.pet_following:
+            time_cost = int(time_cost * 1.5)  # Takes longer with pet underfoot
 
         if choice == "1":
             if self.petted_today:
                 print(f"\nYou've already spent time with {self.pet_name} today.\n")
                 return
-            print(f"\nYou spend a few moments petting {self.pet_name}.")
-            if random.random() < 0.5:  # 50% chance for crop progress bonus
-                print(f"{self.pet_name} seems to have inspired you! (+1 crop progress)\n")
-                self.crops_tended += 1
-            else:
-                print(f"{self.pet_name} wags their tail happily.\n")
+            if self.supplies < 1:
+                print(f"\nYou'd love to take {self.pet_name} along, but you're out of supplies to treat them.\n")
+                return
+            self.supplies -= 1
+            self.pet_following = True
             self.petted_today = True
+            print(f"\nYou feed and play with {self.pet_name}. They excitedly follow you for the morning's work!\n")
         elif choice == "2":
             if self.coffee_inventory > 0:
                 self.coffee_inventory -= 1
@@ -102,7 +108,7 @@ class FarmGame:
             if self.crops_tended_today >= self.max_crops_tended:
                 print("\nYou've tended to the crops as much as you can this morning.\n")
                 return
-            self.crops_tended += 1
+            self.crops_tended += 2 if self.pet_following else 1
             self.crops_tended_today += 1
             print("You tend to the crops. (+1 crop progress)\n")
         else:
@@ -112,12 +118,60 @@ class FarmGame:
         self.current_time += time_cost
         self.print_current_time()
 
+    def pet_daily_contribution(self):
+        results = []
+
+        # Pet always does one thing, two if petted
+        tasks = ["found_supplies", "tended_crops"]
+        if self.petted_today:
+            tasks *= 2  # Increase chance of doing both
+
+        chosen = random.sample(tasks, k=min(2, len(tasks)))
+
+        if "found_supplies" in chosen:
+            self.supplies += 1
+            results.append(f"{self.pet_name} brought back something useful! (+1 supply)")
+        if "tended_crops" in chosen:
+            self.crops_tended += 1
+            results.append(f"{self.pet_name} helped in the garden! (+1 crop progress)")
+
+        if not results:
+            results.append(f"{self.pet_name} mostly lounged around today.")
+        
+        return results
+
+    def pet_daily_random(self):
+        results = []
+
+        choices = ["found_supplies", "tended_crops", "nothing"]
+        outcome = random.choice(choices)
+
+        if outcome == "found_supplies":
+            self.supplies += 1
+            results.append(f"{self.pet_name} brought back something useful! (+1 supply)")
+        elif outcome == "tended_crops":
+            self.crops_tended += 1
+            results.append(f"{self.pet_name} tended some crops while you were busy. (+1 crop progress)")
+        else:
+            results.append(f"{self.pet_name} napped in the sun all morning.")
+
+        return results
+
     def print_current_time(self):
         hours, remainder = divmod(self.current_time, 3600)
         minutes = remainder // 60
         am_pm = "AM" if hours < 12 else "PM"
         hours = hours if hours <= 12 else hours - 12
         print(f"Current time: {hours}:{minutes:02d} {am_pm}\n")
+
+    # Add a method to reset daily states
+    def reset_day(self):
+        self.coffee_buff_active = False
+        self.petted_today = False
+        self.crops_tended_today = 0
+        self.pet_following = False
+        self.current_time = start_time_seconds  # Reset time to start of the day
+        print(f"\n🌅 Day {self.day} begins anew at {self.farm_name}.")
 
     # ----- MAIN LOOP -----
 
@@ -126,7 +180,10 @@ class FarmGame:
         self.morning_flavor()
 
         while self.current_time < self.morning_end_time:
-            print(f"Time remaining: {self.morning_end_time - self.current_time} seconds")
+            remaining = self.morning_end_time - self.current_time
+            hours, remainder = divmod(remaining, 3600)
+            minutes = remainder // 60
+            print(f"Time remaining: {hours}h {minutes:02d}m\n")
             self.show_actions()
             choice = input("Choose an action (1–3): ").strip()
             self.perform_action(choice)
@@ -134,8 +191,14 @@ class FarmGame:
         print("--- Morning Summary ---")
         print(f"Crops tended: {self.crops_tended}")
         print(f"Coffee used: {1 - self.coffee_inventory}")
-        print(f"{self.pet_name} seems content.\n")
+        if not self.pet_following:
+            for line in self.pet_daily_random():
+                print(line)
+        else:
+            print(f"{self.pet_name} stuck by your side all morning, trying to be helpful.\n")
+        print()
         print("🌤️ The sun climbs high above the hills...\n")
+        self.reset_day()
 
 # ----- RUN -----
 
