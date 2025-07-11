@@ -1,6 +1,7 @@
 # main.py
 
 import random
+from datetime import timedelta
 
 # ----- SETUP -----
 
@@ -14,8 +15,19 @@ class FarmGame:
         self.farm_name = ""
         self.pet_type = ""
         self.pet_name = ""
-        self.crop_progress = 0
+        self.supplies = 0
         self.coffee_inventory = 1
+        self.time_per_day = 28800  # 8 hours in seconds
+        self.morning_end_time = 14400  # Noon in seconds
+        self.current_time = 0  # Start of the day at 6:00 AM
+        self.coffee_buff_active = False
+        self.pet_bonus_active = False
+        self.crops_tended = 0
+
+        # Daily limits
+        self.petted_today = False  # Track if the companion has been petted today
+        self.crops_tended_today = 0  # Track the number of times crops have been tended
+        self.max_crops_tended = 3  # Maximum times crops can be tended per day
 
     # ----- STARTUP -----
 
@@ -54,50 +66,74 @@ class FarmGame:
         print("1. Pet your companion")
         print("2. Make coffee")
         print("3. Tend to crops")
-        print("4. Check supplies (no effect)")
         print()
 
-    def perform_action(self, choice, state):
+    def perform_action(self, choice):
+        # Set constant time costs for actions
+        action_costs = {
+            "1": 300,  # Pet companion: 5 minutes
+            "2": 600,  # Make coffee: 10 minutes
+            "3": 1800  # Tend crops: 30 minutes
+        }
+
+        time_cost = action_costs.get(choice, 0)
+        if self.coffee_buff_active:
+            time_cost //= 2  # Halve time cost if coffee buff is active
+
         if choice == "1":
+            if self.petted_today:
+                print(f"\nYou've already spent time with {self.pet_name} today.\n")
+                return
             print(f"\nYou spend a few moments petting {self.pet_name}.")
-            if random.random() < 0.5:
-                print(f"{self.pet_name} nuzzles into your hand. You feel energized. (+1 bonus action!)\n")
-                state["actions"] += 1
+            if random.random() < 0.5:  # 50% chance for crop progress bonus
+                print(f"{self.pet_name} seems to have inspired you! (+1 crop progress)\n")
+                self.crops_tended += 1
             else:
                 print(f"{self.pet_name} wags their tail happily.\n")
+            self.petted_today = True
         elif choice == "2":
             if self.coffee_inventory > 0:
                 self.coffee_inventory -= 1
-                print("You brew a cup of coffee and sip it slowly. (+1 bonus action!)\n")
-                state["actions"] += 1
+                self.coffee_buff_active = True
+                print("You brew a cup of coffee and sip it slowly. Your actions will cost less time for the rest of the day!\n")
             else:
                 print("You're out of coffee beans!\n")
         elif choice == "3":
-            self.crop_progress += 1
-            print("You water and tend to your crops. They look healthier. (+1 crop progress)\n")
-        elif choice == "4":
-            print("You check your shelves. Everything’s in its place. (no effect)\n")
+            if self.crops_tended_today >= self.max_crops_tended:
+                print("\nYou've tended to the crops as much as you can this morning.\n")
+                return
+            self.crops_tended += 1
+            self.crops_tended_today += 1
+            print("You tend to the crops. (+1 crop progress)\n")
         else:
             print("Invalid choice. Try again.\n")
-            state["actions"] += 1  # Give back the action if they typo
+            return  # Do not deduct time for invalid choice
+
+        self.current_time += time_cost
+        self.print_current_time()
+
+    def print_current_time(self):
+        hours, remainder = divmod(self.current_time, 3600)
+        minutes = remainder // 60
+        am_pm = "AM" if hours < 12 else "PM"
+        hours = hours if hours <= 12 else hours - 12
+        print(f"Current time: {hours}:{minutes:02d} {am_pm}\n")
 
     # ----- MAIN LOOP -----
 
     def morning_loop(self):
-        state = {"actions": actions_per_day}
         print(f"🌞 It’s a new morning on {self.farm_name}.")
         self.morning_flavor()
 
-        while state["actions"] > 0:
-            print(f"Actions remaining: {state['actions']}")
+        while self.current_time < self.morning_end_time:
+            print(f"Time remaining: {self.morning_end_time - self.current_time} seconds")
             self.show_actions()
-            choice = input("Choose an action (1–4): ").strip()
-            state["actions"] -= 1
-            self.perform_action(choice, state)
+            choice = input("Choose an action (1–3): ").strip()
+            self.perform_action(choice)
 
         print("--- Morning Summary ---")
-        print(f"Crop progress: {self.crop_progress}")
-        print(f"Coffee left: {self.coffee_inventory}")
+        print(f"Crops tended: {self.crops_tended}")
+        print(f"Coffee used: {1 - self.coffee_inventory}")
         print(f"{self.pet_name} seems content.\n")
         print("🌤️ The sun climbs high above the hills...\n")
 
